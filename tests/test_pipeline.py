@@ -54,7 +54,8 @@ def whisper_cli_falso(tmp_path: Path) -> Path:
         import json, sys
         a = sys.argv
         of = a[a.index("-of") + 1]
-        sys.stderr.write("ggml_vulkan: Found 1 Vulkan devices:\\n")
+        if "-np" not in a:  # como o real: -np silencia o log de inicializacao
+            sys.stderr.write("ggml_vulkan: Found 1 Vulkan devices:\\n")
         dados = {"transcription": [
             {"offsets": {"from": 0, "to": 1500}, "text": " Kafka garante ordem por partição."},
             {"offsets": {"from": 1500, "to": 3000}, "text": " Idempotência evita duplicidade."},

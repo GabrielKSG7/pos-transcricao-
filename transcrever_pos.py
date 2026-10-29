@@ -241,8 +241,10 @@ class MotorWhisperCpp:
 
     def transcrever(self, wav: Path) -> Iterator[Segmento]:
         base = wav.with_suffix("")
+        # Sem "-np": essa opcao tambem silencia o log de inicializacao, onde o
+        # whisper.cpp informa a GPU ("ggml_vulkan: Found N Vulkan devices").
         cmd = [self.cli, "-m", self.modelo, "-f", str(wav), "-l", self.idioma,
-               "-oj", "-of", str(base), "-np", "-t", str(self.threads)]
+               "-oj", "-of", str(base), "-t", str(self.threads)]
         proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         saida_log = (proc.stderr or "") + (proc.stdout or "")
         if not self.gpu_checada:
