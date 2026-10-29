@@ -100,6 +100,8 @@ Depois de cada vídeo o log mostra a velocidade e a previsão para o restante, c
 
 3 aulas, 22 min de áudio, transcritas em 3 min 37 s: **cerca de 6,2x o tempo real**, incluindo a extração do áudio. O português saiu limpo, com pontuação; os erros ficaram em nomes próprios e jargão ("pirâmide da IKW" por DIKW, "banco de dados no SQL" por NoSQL), que é o que o `--glossario` tenta corrigir.
 
+Com `--glossario`, nas mesmas 3 aulas: "DIKW" e "Kenneth Boulding" passaram a sair certos, sem vazamento do texto do glossário e sem perda de conteúdo, ao custo de cerca de 10% de velocidade (5,4x a 5,8x). "NoSQL" e "Cumulocity" continuaram errados: o glossário reduz os erros de jargão, mas não zera.
+
 No primeiro vídeo o log deve mostrar `GPU via Vulkan detectada pelo whisper.cpp`. Se aparecer o aviso de que não viu Vulkan, o `whisper-cli` está rodando só na CPU.
 
 ## Testes
