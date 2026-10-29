@@ -1,0 +1,27 @@
+# Conteudo do curso e transcricoes geradas: nunca versionar
+TRANSCRICAO/
+*_manifesto.json
+_manifesto.json
+*.md.bak
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.wmv
+*.webm
+*.m4v
+*.mp3
+*.wav
+*.m4a
+*.pdf
+
+# Modelos e binarios do whisper
+*.bin
+whisper-cli*
+*.dll
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
