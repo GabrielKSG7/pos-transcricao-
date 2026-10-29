@@ -46,6 +46,31 @@ winget install Gyan.FFmpeg        # ffmpeg no Windows
 2. Baixe o modelo [`ggml-large-v3-turbo-q5_0.bin`](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin) (574 MB) para a mesma pasta.
 3. Confirme que o driver da placa (AMD Adrenalin) está atualizado e rode `C:\whisper\whisper-cli.exe --help`.
 
+#### Compilando o whisper.cpp oficial com Vulkan (caminho testado numa GPU AMD)
+
+```powershell
+winget install Kitware.CMake
+winget install KhronosGroup.VulkanSDK
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+# feche e abra o PowerShell; $env:VULKAN_SDK deve apontar para o SDK
+
+git clone https://github.com/ggml-org/whisper.cpp C:\whisper-src
+cd C:\whisper-src
+cmake -B build -DGGML_VULKAN=1
+cmake --build build --config Release -j
+Test-Path build\bin\Release\ggml-vulkan.dll   # precisa dar True
+Copy-Item build\bin\Release\* C:\whisper\ -Force
+
+# teste: o log deve mostrar "ggml_vulkan: Found 1 Vulkan devices"
+C:\whisper\whisper-cli.exe -m C:\whisper\ggml-large-v3-turbo-q5_0.bin -f C:\whisper-src\samples\jfk.wav -l en
+```
+
+Armadilhas encontradas:
+
+- **Pasta `build` copiada de outro lugar:** o CMake reaproveita o `CMakeCache.txt` antigo, compila no diretório original e ignora o `-DGGML_VULKAN=1`. Apague a pasta `build` antes de configurar.
+- **Compilou, mas sem GPU:** se não existir `ggml-vulkan.dll` na saída, o build é só de CPU, mesmo com o `--help` funcionando.
+- **Não compile dentro de `C:\Windows\System32`:** exige administrador e espalha arquivos numa pasta do sistema.
+
 ## Uso
 
 ```powershell
