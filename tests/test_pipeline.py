@@ -136,3 +136,23 @@ def test_paragrafos_por_tempo():
     texto, total = tp.segmentos_para_markdown(Path("x.mp4"), 100.0, segs)
     assert total == 10
     assert texto.count("**[") == 2  # ~45 s por paragrafo => 2 blocos em 100 s
+
+
+@precisa_ffmpeg
+def test_glossario_chega_ao_whisper_cli(tmp_path: Path, whisper_cli_falso: Path, capsys):
+    origem, destino = tmp_path / "in", tmp_path / "out"
+    gerar_video(origem / "a.mp4", 2)
+    modelo = tmp_path / "m.bin"
+    modelo.write_bytes(b"0")
+    registro = tmp_path / "args.txt"
+    # o lancador falso registra os argumentos recebidos
+    lancador = whisper_cli_falso.read_text(encoding="utf-8").replace(
+        'exec "', f'echo "$@" > "{registro}"\nexec "', 1)
+    whisper_cli_falso.write_text(lancador, encoding="utf-8")
+    tp.main(["--origem", str(origem), "--destino", str(destino), "--motor", "whispercpp",
+             "--whisper-cli", str(whisper_cli_falso), "--modelo-ggml", str(modelo), "--glossario"])
+    if sys.platform != "win32":
+        assert "--prompt" in registro.read_text(encoding="utf-8")
+        assert "DIKW" in registro.read_text(encoding="utf-8")
+    saida = capsys.readouterr().out
+    assert "previsao para o restante" in saida

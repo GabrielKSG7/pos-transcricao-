@@ -71,6 +71,16 @@ EXTS_MIDIA = EXTS_VIDEO | EXTS_AUDIO
 EXTS_PDF = {".pdf"}
 MANIFESTO = "_manifesto.json"
 PARAGRAFO_S = 45  # fecha um paragrafo a cada ~45 s de fala
+GB_POR_HORA = 0.4  # tamanho tipico de 1 h de aula gravada (usado so na estimativa inicial)
+
+# Termos que o modelo tende a errar em aulas de dados. Use com --glossario.
+GLOSSARIO_PADRAO = (
+    "Aula de engenharia e arquitetura de dados. Termos: DIKW, Big Data, NoSQL, SQL, OLTP, OLAP, "
+    "ETL, ELT, Data Lake, Data Warehouse, Lakehouse, Hadoop, HDFS, Spark, Kafka, Flink, Airflow, "
+    "dbt, DuckDB, Parquet, Delta Lake, arquitetura Lambda, arquitetura Kappa, streaming, batch, "
+    "idempotência, particionamento, sharding, MongoDB, Cassandra, Redis, DynamoDB, IoT, "
+    "Cumulocity, exabyte, zettabyte, AWS, Azure, GCP, Databricks."
+)
 
 # Um segmento transcrito: (inicio_s, fim_s, texto)
 Segmento = tuple[float, float, str]
@@ -201,7 +211,7 @@ def extrair_audio(origem: Path, destino_wav: Path) -> None:
 class MotorFasterWhisper:
     nome = "faster-whisper"
 
-    def __init__(self, modelo: str, dispositivo: str, idioma: str):
+    def __init__(self, modelo: str, dispositivo: str, idioma: str, prompt: str | None = None):
         from faster_whisper import WhisperModel
 
         if dispositivo == "auto":
@@ -214,11 +224,13 @@ class MotorFasterWhisper:
         log(f"Carregando Whisper '{modelo}' em {dispositivo} ({tipo_calculo})...")
         self.modelo = WhisperModel(modelo, device=dispositivo, compute_type=tipo_calculo)
         self.idioma = idioma
+        self.prompt = prompt
 
     def transcrever(self, wav: Path) -> Iterator[Segmento]:
         segmentos, _info = self.modelo.transcribe(
             str(wav), language=self.idioma, vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 700}, beam_size=5,
+            initial_prompt=self.prompt,
         )
         for s in segmentos:
             yield (s.start, s.end, s.text)
@@ -227,7 +239,7 @@ class MotorFasterWhisper:
 class MotorWhisperCpp:
     nome = "whispercpp"
 
-    def __init__(self, cli: str, modelo_ggml: str, idioma: str, threads: int):
+    def __init__(self, cli: str, modelo_ggml: str, idioma: str, threads: int, prompt: str | None = None):
         caminho_cli = shutil.which(cli) or (cli if Path(cli).is_file() else None)
         if not caminho_cli:
             sys.exit(f"ERRO: whisper-cli nao encontrado: {cli}\n"
@@ -236,6 +248,7 @@ class MotorWhisperCpp:
             sys.exit(f"ERRO: modelo ggml nao encontrado: {modelo_ggml}\n"
                      "  Baixe, por exemplo, ggml-large-v3-turbo-q5_0.bin e informe com --modelo-ggml")
         self.cli, self.modelo, self.idioma, self.threads = caminho_cli, modelo_ggml, idioma, threads
+        self.prompt = prompt
         self.gpu_checada = False
         log(f"Motor whisper.cpp: {self.cli}  modelo: {Path(self.modelo).name}")
 
@@ -245,6 +258,8 @@ class MotorWhisperCpp:
         # whisper.cpp informa a GPU ("ggml_vulkan: Found N Vulkan devices").
         cmd = [self.cli, "-m", self.modelo, "-f", str(wav), "-l", self.idioma,
                "-oj", "-of", str(base), "-t", str(self.threads)]
+        if self.prompt:
+            cmd += ["--prompt", self.prompt]
         proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         saida_log = (proc.stderr or "") + (proc.stdout or "")
         if not self.gpu_checada:
@@ -344,12 +359,13 @@ def inventariar(arquivos: list[Path]) -> None:
 
     midia = sum(p.stat().st_size for p in por_tipo["video/audio"])
     if midia:
-        # estimativa grosseira: ~0.7 GB por hora de video de aula em 720p
-        horas = midia / (0.7 * 1024 ** 3)
+        # estimativa grosseira: ~0.4 GB por hora (medido em aulas gravadas com slides);
+        # a previsao real aparece durante a rodada, calculada pela velocidade observada
+        horas = midia / (GB_POR_HORA * 1024 ** 3)
         print(f"\n  Estimativa de midia: ~{horas:.0f} horas de video/audio")
         print("  Tempo de transcricao estimado (varia muito com o hardware):")
         print(f"    GPU NVIDIA (faster-whisper, large-v3) ....... ~{horas / 8:.0f} a {horas / 4:.0f} h")
-        print(f"    GPU AMD/Intel (whisper.cpp Vulkan, turbo) .... ~{horas / 8:.0f} a {horas / 3:.0f} h")
+        print(f"    GPU AMD/Intel (whisper.cpp Vulkan, turbo) .... ~{horas / 8:.0f} a {horas / 5:.0f} h")
         print(f"    CPU (faster-whisper, medium int8) ............ ~{horas / 1.5:.0f} a {horas * 1.5:.0f} h")
     print("=" * 66 + "\n")
 
@@ -389,6 +405,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--threads", type=int, default=max(1, (os.cpu_count() or 4) // 2),
                     help="[whispercpp] threads de CPU de apoio")
     ap.add_argument("--idioma", default="pt")
+    ap.add_argument("--glossario", nargs="?", const="__padrao__", default=None,
+                    help="Dica de vocabulario para o modelo. Sem valor usa o glossario de dados embutido; "
+                         "ou passe o seu texto entre aspas")
     ap.add_argument("--limite", type=int, default=0, help="Processa no maximo N arquivos (piloto)")
     ap.add_argument("--apenas", choices=["video", "pdf"], help="Processa so um tipo")
     ap.add_argument("--inventario", action="store_true", help="So lista o que existe e sai")
@@ -411,18 +430,24 @@ def main(argv: list[str] | None = None) -> None:
 
     pendentes_midia = [p for p in arquivos if p.suffix.lower() in EXTS_MIDIA
                        and not manifesto.ja_feito(chave_arquivo(p))]
+    prompt = GLOSSARIO_PADRAO if args.glossario == "__padrao__" else args.glossario
+    if prompt:
+        log("Glossario ativado para orientar a transcricao de termos tecnicos.")
     motor = None
     if pendentes_midia:
         exige_ffmpeg()
         if args.motor == "whispercpp":
             if not args.modelo_ggml:
                 sys.exit("ERRO: o motor whispercpp exige --modelo-ggml (caminho do arquivo .bin).")
-            motor = MotorWhisperCpp(args.whisper_cli, args.modelo_ggml, args.idioma, args.threads)
+            motor = MotorWhisperCpp(args.whisper_cli, args.modelo_ggml, args.idioma, args.threads, prompt)
         else:
-            motor = MotorFasterWhisper(args.modelo, args.dispositivo, args.idioma)
+            motor = MotorFasterWhisper(args.modelo, args.dispositivo, args.idioma, prompt)
 
     processados = pulados = falhas = 0
     inicio = time.time()
+    bytes_restantes = sum(p.stat().st_size for p in pendentes_midia)
+    bytes_feitos = 0
+    seg_midia = 0.0
 
     for i, arquivo in enumerate(arquivos, start=1):
         if args.limite and processados >= args.limite:
@@ -442,7 +467,17 @@ def main(argv: list[str] | None = None) -> None:
             if arquivo.suffix.lower() in EXTS_PDF:
                 meta = pdf_para_markdown(arquivo, saida)
             else:
+                t0 = time.time()
                 meta = midia_para_markdown(arquivo, saida, motor)
+                gasto = time.time() - t0
+                tamanho = arquivo.stat().st_size
+                bytes_feitos += tamanho
+                bytes_restantes -= tamanho
+                seg_midia += gasto
+                fator = meta["duracao_s"] / gasto if gasto > 0 else 0
+                falta = bytes_restantes * (seg_midia / bytes_feitos) if bytes_feitos else 0
+                log(f"    ok: {hhmmss(meta['duracao_s'])} de aula em {hhmmss(gasto)} ({fator:.1f}x)"
+                    f" | previsao para o restante: ~{hhmmss(falta)}")
             manifesto.marcar(chave, saida, meta)
             processados += 1
         except KeyboardInterrupt:

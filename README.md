@@ -88,6 +88,18 @@ python transcrever_pos.py --origem "G:\XP" --destino "G:\XP\TRANSCRICAO" --limit
 # 4. Rodada completa: o mesmo comando sem --limite
 ```
 
+Depois de cada vídeo o log mostra a velocidade e a previsão para o restante, calculada com o ritmo real:
+
+```
+[16:38:57]     ok: 00:07:57 de aula em 00:01:17 (6.2x) | previsao para o restante: ~14:41:08
+```
+
+`--glossario` (sem valor) passa ao modelo uma lista de termos de dados (DIKW, NoSQL, Kafka, Spark, idempotência...) para reduzir erros de jargão. Também aceita o seu texto: `--glossario "Aula sobre Kafka e Flink"`. Compare num destino separado antes de usar na rodada completa.
+
+### Resultado do piloto (GPU AMD, `large-v3-turbo-q5_0`)
+
+3 aulas, 22 min de áudio, transcritas em 3 min 37 s: **cerca de 6,2x o tempo real**, incluindo a extração do áudio. O português saiu limpo, com pontuação; os erros ficaram em nomes próprios e jargão ("pirâmide da IKW" por DIKW, "banco de dados no SQL" por NoSQL), que é o que o `--glossario` tenta corrigir.
+
 No primeiro vídeo o log deve mostrar `GPU via Vulkan detectada pelo whisper.cpp`. Se aparecer o aviso de que não viu Vulkan, o `whisper-cli` está rodando só na CPU.
 
 ## Testes
